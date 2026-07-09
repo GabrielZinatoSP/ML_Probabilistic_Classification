@@ -412,7 +412,7 @@ The model should be retrained or reviewed when:
 ├── Notebook.ipynb
 ├── requirements.txt
 ├── README.md
-└── artifacts/
+└── Artifacts/
     └── catboost_venn_abers_artifacts.pkl
 ```
 
