@@ -1,76 +1,123 @@
 # Probabilistic Modeling for Customer Prioritization in a Banking Marketing Campaign
 
-## 1. Project Overview
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Dataset](#dataset)
+3. [Business Problem](#business-problem)
+4. [Key Business Assumption](#key-business-assumption)
+5. [Classification Errors](#classification-errors)
+   - [False Positive](#false-positive)
+   - [False Negative](#false-negative)
+6. [Key Data Decisions](#key-data-decisions)
+   - [Removing `duration`](#removing-duration)
+   - [Handling `unknown` Values](#handling-unknown-values)
+   - [Handling `pdays = -1`](#handling-pdays--1)
+   - [Transforming `day`](#transforming-day)
+7. [Evaluation Strategy](#evaluation-strategy)
+8. [Models Tested](#models-tested)
+9. [Threshold Optimization](#threshold-optimization)
+10. [Hyperparameter Tuning](#hyperparameter-tuning)
+11. [Probability Calibration](#probability-calibration)
+12. [Final Model](#final-model)
+13. [Business Impact](#business-impact)
+14. [Explainability](#explainability)
+    - [Global Feature Importance](#global-feature-importance)
+    - [Local Explanation with Calibrated Explanations](#local-explanation-with-calibrated-explanations)
+15. [Production Usage and MLOps](#production-usage-and-mlops)
+16. [Monitoring](#monitoring)
+17. [Technologies Used](#technologies-used)
+18. [Project Structure](#project-structure)
+19. [How to Run](#how-to-run)
+20. [Conclusion](#conclusion)
+
+---
+
+## Overview
 
 This project develops a complete Data Science pipeline to predict whether a customer will subscribe to a **term deposit** after a banking marketing campaign.
 
-The goal is not only to build a binary classifier, but to create a model capable of providing calibrated probabilities of subscription, allowing the calculation of the uncertainty associated with each prediction.
+The goal is not only to build a binary classifier, but to create a probabilistic model capable of:
 
-The final solution is designed as a decision-support tool for marketing teams, helping them prioritize customers with higher expected conversion probability.
+- estimating each customer's probability of subscription;
+- calibrating predicted probabilities;
+- estimating uncertainty associated with each prediction;
+- supporting customer prioritization for sales and marketing teams;
+- explaining model behavior both globally and locally.
 
-Also, we can provide the global and local feature importance values.
+The final solution is designed as a decision-support tool that helps marketing and sales teams prioritize customers based on their estimated conversion probability.
 
-Section `11` of this README file shows the business impact of using the model.
-
-The dataset used is available at https://www.kaggle.com/datasets/abdelazizsami/bank-marketing/data
-
-I also suggest reading:
-
-    [Moro et al., 2011] S. Moro, R. Laureano and P. Cortez. Using Data Mining for Bank Direct Marketing: An Application of the CRISP-DM Methodology. 
-    In P. Novais et al. (Eds.), Proceedings of the European Simulation and Modelling Conference - ESM'2011, pp. 117-121, Guimarães, Portugal, October, 2011. EUROSIS.
-
-Available at: 
-
-[pdf] http://hdl.handle.net/1822/14838
-
-[bib] http://www3.dsi.uminho.pt/pcortez/bib/2011-esm-1.txt
+> This is a **propensity model**, not an uplift model.  
+> It estimates which customers are more likely to subscribe, but it does not directly estimate the incremental effect of contacting each customer.
 
 ---
 
-## 2. Business Problem
+## Dataset
 
-Marketing campaigns have operational costs and limited contact capacity. If customers are selected randomly, the sales team may spend effort contacting clients with low likelihood of conversion.
+The dataset used in this project is the **Bank Marketing Dataset**, based on marketing campaigns from a Portuguese banking institution.
 
-The business question is:
-
-> Which customers are more likely to subscribe to the term deposit?
+- Dataset: https://www.kaggle.com/datasets/abdelazizsami/bank-marketing/data
+- Related paper: http://hdl.handle.net/1822/14838
+- BibTeX: http://www3.dsi.uminho.pt/pcortez/bib/2011-esm-1.txt
 
 The target variable is:
 
-- `y = yes`: the customer subscribed to the product;
+- `y = yes`: the customer subscribed to the term deposit;
 - `y = no`: the customer did not subscribe.
 
-The model is intended to support campaign prioritization by ranking customers according to their calibrated probability of subscription. **Venn-Abers** was used to calibrate the probabilities and calculate the uncertainty interval associated with each prediction.
+The positive class represents customers who subscribed to the product.
 
 ---
 
-## 3. Understanding Classification Errors
+## Business Problem
 
-Since this is a business decision problem, it was important to define the cost of classification errors.
+Marketing campaigns have operational costs and limited contact capacity. If customers are selected randomly, the sales or marketing team may spend effort contacting customers with low likelihood of conversion.
+
+The main business question is:
+
+> Which customers are more likely to subscribe to the term deposit and should therefore be prioritized?
+
+The model supports campaign prioritization by ranking customers according to their calibrated probability of subscription.
+
+---
+
+## Key Business Assumption
+
+This project assumes that the main business goal is to **maximize expected conversions under limited contact capacity**.
+
+In this context, the model should be used to prioritize customers with higher predicted probability of subscription.
+
+However, if the business objective were to identify customers who would subscribe **only if contacted**, then this would require an **uplift modeling** approach with treatment/control data.
+
+---
+
+## Classification Errors
+
+Since this is a business decision problem, it is important to define the cost of classification errors.
 
 ### False Positive
 
 The model predicts that a customer is likely to subscribe, but the customer does not subscribe.
 
-In this context, this error may be risky because the business could incorrectly assume that this customer is already highly likely to convert and reduce commercial effort toward them.
+In this context, a false positive may be risky because the business could incorrectly assume that this customer is already highly likely to convert and reduce commercial effort toward them.
 
 ### False Negative
 
 The model predicts that a customer is unlikely to subscribe, but the customer would actually subscribe.
 
-This may lead to lower campaign efficiency, but it was considered less critical than incorrectly treating a non-converting customer as a strong opportunity.
+This may lead to missed opportunities or lower campaign efficiency.
 
-Therefore, the project gave special attention to reducing false positives, prioritizing metrics such as:
+Given this business interpretation, the project gave special attention to reducing false positives and prioritized metrics such as:
 
 - Precision;
-- F0.5-score (which is the f-beta score with 0.5 beta);
+- F0.5-score;
 - PR-AUC.
 
 ---
 
-## 4. Key Data Decisions
+## Key Data Decisions
 
-### 4.1 Removing `duration`
+### Removing `duration`
 
 The variable `duration` represents the duration of the last contact with the customer.
 
@@ -80,7 +127,7 @@ For this reason, `duration` was removed from the modeling stage.
 
 ---
 
-### 4.2 Handling `unknown` Values
+### Handling `unknown` Values
 
 Some categorical variables contained `unknown` values, especially:
 
@@ -91,15 +138,15 @@ Some categorical variables contained `unknown` values, especially:
 
 These values were kept as separate categories instead of being removed or imputed.
 
-The reasoning is that missing categorical information may itself carry predictive signal. For example, most `unknown` values in `poutcome` were associated with customers who had not been contacted in previous campaigns and can be considered a category by itself.
+The reasoning is that missing categorical information may itself carry predictive signal. For example, most `unknown` values in `poutcome` were associated with customers who had not been contacted in previous campaigns.
 
 ---
 
-### 4.3 Handling `pdays = -1`
+### Handling `pdays = -1`
 
 The variable `pdays` represents the number of days since the customer was last contacted in a previous campaign.
 
-The value `-1` means that the customer had not been contacted before. Therefore, treating `-1` as a regular numerical value would be misleading.
+The value `-1` means that the customer had not been contacted before. Treating `-1` as a regular numerical value would be misleading.
 
 Two variables were created to replace `pdays`:
 
@@ -110,7 +157,7 @@ The original `pdays` variable was not used in the final model.
 
 ---
 
-### 4.4 Transforming `day`
+### Transforming `day`
 
 The variable `day` represents the day of the month when the contact occurred.
 
@@ -124,27 +171,29 @@ The original `day` variable was then removed.
 
 ---
 
-## 5. Model Evaluation Strategy
+## Evaluation Strategy
 
-The dataset is imbalanced, with only approximately **11.7%** positive cases. Therefore, `accuracy` was not used as the main evaluation metric.
+The dataset is imbalanced, with only approximately **11.7%** positive cases. Therefore, accuracy was not used as the main evaluation metric.
 
 A model that always predicts the majority class would achieve high accuracy but would not identify any potential subscribers.
 
 The following metrics were prioritized:
 
-- **Precision**: to control false positives;
-- **Recall**: to monitor how many actual subscribers were identified;
-- **F0.5-score**: to give more weight to Precision than Recall;
-- **PR-AUC**: more appropriate for imbalanced datasets focused on the positive class;
-- **Brier Score**: to evaluate probability quality;
-- **Log Loss**: to penalize incorrect probability estimates, especially confident wrong predictions;
-- calibration curves.
+| Metric | Purpose |
+|---|---|
+| Precision | Controls false positives |
+| Recall | Measures how many actual subscribers were identified |
+| F0.5-score | Gives more weight to Precision than Recall |
+| PR-AUC | Evaluates ranking quality in an imbalanced dataset |
+| Brier Score | Evaluates probability quality |
+| Log Loss | Penalizes incorrect probability estimates, especially confident wrong predictions |
+| Calibration Curve | Shows whether predicted probabilities match observed frequencies |
 
 A `DummyClassifier` was used as a baseline to validate whether the trained models added value beyond a naive strategy.
 
 ---
 
-## 6. Models Tested
+## Models Tested
 
 The following models were evaluated:
 
@@ -155,7 +204,7 @@ The following models were evaluated:
 - Random Forest;
 - CatBoost.
 
-The CatBoost model was selected as the main candidate because it showed:
+CatBoost was selected as the main candidate because it showed:
 
 - the best PR-AUC among the evaluated models;
 - good performance after threshold adjustment;
@@ -164,42 +213,57 @@ The CatBoost model was selected as the main candidate because it showed:
 
 ---
 
-## 7. Threshold Optimization
+## Threshold Optimization
 
 Instead of using the default classification threshold of `0.5`, different thresholds were evaluated.
 
 Since false positives were considered especially relevant, the threshold was selected using the **F0.5-score**, which gives more weight to Precision than Recall.
 
-For the base CatBoost model, the best threshold was approximately 0.81. For the calibrated model, the best threshold was 0.41.
+For the base CatBoost model, the best threshold was approximately:
 
-The table below shows the comparison between the base model and the calibrated model at their best threshold:
+```text
+threshold = 0.81
+```
 
-|model | threshold | precision | recall | f0_5 | pr_auc | brier_score | log_loss | total predicted positives |
-| -- | -- | -- | -- | -- | -- | -- | -- | -- |
-| CatBoost Base | 0.8100 | 0.5696 | 0.3790 | 0.5176 | 0.4533 | 0.1512 | 0.4824| 704 |
-| CatBoost + Venn-Abers | 0.4100 | 0.5340 | 0.4159 | 0.5053 | 0.4360 | 0.0811 | 0.2838 | 824 |
+For the calibrated model, the best threshold was:
 
-This threshold provided the best balance between reducing false positives and still identifying a relevant share of actual subscribers. 
+```text
+threshold = 0.41
+```
+
+### Base vs. Calibrated Model
+
+| Model | Threshold | Precision | Recall | F0.5 | PR-AUC | Brier Score | Log Loss | Total Predicted Positives |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| CatBoost Base | 0.81 | 0.5696 | 0.3790 | 0.5176 | 0.4533 | 0.1512 | 0.4824 | 704 |
+| CatBoost + Venn-Abers | 0.41 | 0.5340 | 0.4159 | 0.5053 | 0.4360 | 0.0811 | 0.2838 | 824 |
+
+The calibrated model slightly reduced some ranking/classification metrics but substantially improved probability quality.
 
 ---
 
-## 8. Hyperparameter Tuning
+## Hyperparameter Tuning
 
 Hyperparameter tuning was performed using Optuna.
 
-The tuned CatBoost model became more conservative than the base model. It improved Precision from 0.5696 to 0.6077 and reduced false positives from 303 to 215.
+The tuned CatBoost model became more conservative than the base model. It improved Precision from `0.5696` to `0.6077` and reduced false positives from `303` to `215`.
 
-However, this improvement came at the cost of lower Recall, which decreased from 0.3790 to 0.3147. The number of true positives also decreased from 401 to 333, while false negatives increased from 657 to 725.
+However, this improvement came at the cost of lower Recall, which decreased from `0.3790` to `0.3147`. The number of true positives also decreased from `401` to `333`, while false negatives increased from `657` to `725`.
 
-The tuned model had slightly lower F0.5-score and PR-AUC than the base model. F0.5 decreased from 0.5176 to 0.5123, while PR-AUC decreased from 0.4533 to 0.4523.
+The tuned model had slightly lower F0.5-score and PR-AUC than the base model:
+
+| Model | Threshold | Precision | Recall | F0.5 | PR-AUC | Brier Score | Log Loss | Total Predicted Positives |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| CatBoost Base | 0.81 | 0.5696 | 0.3790 | 0.5176 | 0.4533 | 0.1512 | 0.4824 | 704 |
+| CatBoost Tuned | 0.84 | 0.6077 | 0.3147 | 0.5123 | 0.4523 | 0.1507 | 0.4810 | 548 |
 
 Although Brier Score and Log Loss improved marginally, the gains were too small to justify replacing the base model.
 
-Therefore, the tuned CatBoost was considered a more conservative alternative, but the base CatBoost was kept as the main model due to its better overall balance between Precision, Recall, F0.5-score, PR-AUC and true positives captured.
+Therefore, the tuned CatBoost was considered a more conservative alternative, while the base CatBoost was kept as the main model due to its better overall balance between Precision, Recall, F0.5-score, PR-AUC and true positives captured.
 
 ---
 
-## 9. Probability Calibration
+## Probability Calibration
 
 The base CatBoost model showed good ranking ability, but its predicted probabilities were overestimated.
 
@@ -207,22 +271,24 @@ Therefore, probability calibration was applied using **Venn-Abers**.
 
 The goal of calibration was to make predicted probabilities more reliable. For example, among customers predicted with approximately 70% probability of subscription, around 70% should actually subscribe.
 
-After calibration, probability quality improved significantly:
-
-![Model Calibration](Calibration.png)
+### Calibration Results
 
 | Model | Brier Score | Log Loss |
 |---|---:|---:|
 | CatBoost Base | 0.1512 | 0.4824 |
 | CatBoost + Venn-Abers | 0.0811 | 0.2838 |
 
-Although the calibrated model had a small decrease in some classification metrics, it produced much more reliable probabilities. We can see how the calibration diminished the `brier score` and `log loss` (which are metrics that penalize bad probabilities) by almost 50%.
+The calibrated model reduced Brier Score and Log Loss by almost 50%, indicating much more reliable probabilities.
 
-Since the project's objective involves probabilistic decision-making and risk estimation, the calibrated model was considered more appropriate for business use.
+The calibration curve is shown below:
+
+![Model Calibration](Calibration.png)
+
+Since the project objective involves probabilistic decision-making and risk estimation, the calibrated model was considered more appropriate for business use.
 
 ---
 
-## 10. Final Model
+## Final Model
 
 The final selected solution was:
 
@@ -236,7 +302,7 @@ With the calibrated model, the selected threshold was:
 threshold = 0.41
 ```
 
-The calibrated model produced:
+The calibrated model produces:
 
 - calibrated probability of subscription;
 - final predicted class;
@@ -245,7 +311,7 @@ The calibrated model produced:
 
 ---
 
-## 11. Business Impact
+## Business Impact
 
 To translate model performance into business value, the model was compared against a random customer selection strategy.
 
@@ -277,15 +343,26 @@ This represents approximately:
 ~4.6x lift compared to random selection
 ```
 
-In practical terms, the model improves the quality of the contact list, allowing the sales team to focus on customers with much higher conversion probability. Alternatively, the marketing team can focus on the customers with lower conversion probability and target them with ads campaigns.
+In practical terms, the model does not necessarily increase the number of calls. Instead, it improves the quality of the contact list, allowing the sales team to focus on customers with much higher expected conversion probability.
+
+### Important Note
+
+This analysis is based on a historical test set. It indicates the potential value of the model, but it does not guarantee the same result in production.
+
+The ideal validation would be an A/B test comparing:
+
+- a group selected by the current strategy or random selection;
+- a group prioritized by the model.
+
+This would make it possible to measure the real incremental conversion gain.
 
 ---
 
-## 12. Explainability
+## Explainability
 
 Two explainability approaches were used.
 
-### 12.1 Global Feature Importance
+### Global Feature Importance
 
 Feature importance from CatBoost showed that the most relevant variables were:
 
@@ -310,11 +387,11 @@ Feature importance should not be interpreted as causality. It only indicates whi
 
 ---
 
-### 12.2 Local Explanation with Calibrated Explanations
+### Local Explanation with Calibrated Explanations
 
-A local explanation was generated for one specific prediction using `calibrated-explanations` ( available at https://github.com/Moffran/calibrated_explanations )
+A local explanation was generated for one specific prediction using https://github.com/Moffran/calibrated_explanations.
 
-This made it possible to understand which features increased or decreased the predicted probability for a specific customer:
+This made it possible to understand which features increased or decreased the predicted probability for a specific customer.
 
 In one example, the following factors increased the probability of subscription:
 
@@ -335,7 +412,7 @@ This explanation is local and describes the model behavior for one customer. It 
 
 ---
 
-## 13. Production Usage and MLOps
+## Production Usage and MLOps
 
 In production, the model could be used as a commercial prioritization engine.
 
@@ -359,7 +436,7 @@ The expected output for each customer could include:
 
 ---
 
-## 14. Monitoring
+## Monitoring
 
 After deployment, the model should be continuously monitored.
 
@@ -388,7 +465,7 @@ The model should be retrained or reviewed when:
 
 ---
 
-## 15. Technologies Used
+## Technologies Used
 
 - Python;
 - pandas;
@@ -398,13 +475,13 @@ The model should be retrained or reviewed when:
 - scikit-learn;
 - CatBoost;
 - Optuna;
-- [MAPIE](https://mapie.readthedocs.io/en/stable/);
-- [calibrated-explanations](https://github.com/Moffran/calibrated_explanations);
+- MAPIE;
+- calibrated-explanations;
 - joblib.
 
 ---
 
-## 16. Expected Project Structure
+## Project Structure
 
 ```text
 .
@@ -412,13 +489,13 @@ The model should be retrained or reviewed when:
 ├── Notebook.ipynb
 ├── requirements.txt
 ├── README.md
-└── Artifacts/
+└── artifacts/
     └── catboost_venn_abers_artifacts.pkl
 ```
 
 ---
 
-## 17. How to Run
+## How to Run
 
 Install the dependencies:
 
@@ -432,24 +509,27 @@ Or using `uv`:
 uv pip install -r requirements.txt
 ```
 
-Then run the notebook.
+Then run the notebook:
 
-If using Jupytext, the `.py` file can be opened as a notebook-compatible script.
+```bash
+jupyter notebook Notebook.ipynb
+```
 
 ---
 
-## 18. Conclusion
+## Conclusion
 
 This project showed that it is possible to build a model that supports banking marketing campaigns by prioritizing customers with higher probability of subscription.
 
 The final solution:
 
-- outperformed the naive baseline;
+- outperformed a naive baseline;
 - generated calibrated probabilities;
-- allowed risk-aware decision-making;
+- enabled uncertainty-aware decision-making;
 - provided global and local explainability;
 - can be integrated into a production workflow with monitoring and retraining.
 
 From a business perspective, the model showed a potential lift of approximately **4.6x** compared to random customer selection for the same number of contacted customers.
 
-The main value of the model is not simply predicting `yes` or `no`, but helping the commercial team allocate effort more efficiently by focusing on customers with higher expected conversion probability.
+The main value of the model is not simply predicting `yes` or `no`, but helping commercial teams allocate effort more efficiently by focusing on customers with higher expected conversion probability.
+
